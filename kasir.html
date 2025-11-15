@@ -1,0 +1,380 @@
+<!doctype html>
+
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aplikasi Kasir - Scan Barcode (Offline)</title>
+  <style>
+    :root{--accent:#0b78d1}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;margin:0;padding:0;background:#f6f7fb;color:#111}
+    .app{max-width:980px;margin:18px auto;padding:16px}
+    header{display:flex;gap:12px;align-items:center}
+    h1{font-size:20px;margin:0}
+    .row{display:flex;gap:12px}
+    .col{background:white;border-radius:8px;padding:12px;box-shadow:0 2px 6px rgba(0,0,0,0.06)}
+    .camera{width:320px;height:240px;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:8px}
+    video{width:100%;height:100%;object-fit:cover}
+    button{background:var(--accent);color:white;border:0;padding:8px 10px;border-radius:8px;cursor:pointer}
+    input,select{padding:8px;border-radius:6px;border:1px solid #ddd;width:100%;box-sizing:border-box}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px;border-bottom:1px solid #eee;text-align:left}
+    .small{font-size:13px;color:#666}
+    .actions{display:flex;gap:8px;flex-wrap:wrap}
+    .badge{background:#eee;padding:4px 8px;border-radius:999px;font-weight:600}
+    footer{margin-top:16px;text-align:center;color:#666;font-size:13px}
+    @media(max-width:800px){.row{flex-direction:column}.camera{width:100%;height:220px}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div>
+        <h1>Aplikasi Kasir - Scan Barcode (HTML Offline)</h1>
+        <div class="small">Gunakan kamera HP untuk scan. Bisa daftarkan barang baru dan total otomatis.</div>
+      </div>
+      <div style="margin-left:auto;text-align:right">
+        <div class="small">Penyimpanan: <span id="storageStatus" class="badge">--</span></div>
+      </div>
+    </header><main class="row" style="margin-top:12px;gap:14px">
+  <section class="col" style="flex:1;min-width:320px">
+    <h3>Scanner Kamera</h3>
+    <div class="camera" id="cameraWrap">
+      <video id="video" autoplay muted playsinline></video>
+    </div>
+    <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+      <button id="startBtn">Mulai Scan</button>
+      <button id="stopBtn" style="background:#888">Hentikan</button>
+      <div style="margin-left:auto" class="small">Terdeteksi: <span id="detected" class="badge">-</span></div>
+    </div>
+    <div class="small" style="margin-top:8px">Tip: Arahkan kamera pada barcode yang jelas, bukan pada layar yang terlalu terang. Jika browser mendukung, sistem akan mencoba BarcodeDetector (lebih cepat).</div>
+
+    <hr />
+
+    <h3>Produk Terdaftar</h3>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button id="btnAddProduct">Tambah Produk Manual</button>
+      <button id="exportProducts">Export Produk</button>
+      <button id="importProducts">Import Produk</button>
+    </div>
+    <div id="productList" style="max-height:220px;overflow:auto"></div>
+
+  </section>
+
+  <section class="col" style="width:420px">
+    <h3>Keranjang Belanja</h3>
+    <div id="cartWrap">
+      <table id="cartTable">
+        <thead><tr><th>No</th><th>Nama</th><th>Qty</th><th>Harga</th><th>Subtotal</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+        <div class="small">Items: <span id="itemCount">0</span></div>
+        <div style="font-weight:800;font-size:20px">Total: Rp <span id="total">0</span></div>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px">
+        <button id="checkout">Bayar (Selesai)</button>
+        <button id="clearCart" style="background:#e85d5d">Bersihkan</button>
+        <button id="saveTx" style="background:#4caf50">Simpan Transaksi</button>
+      </div>
+    </div>
+
+    <hr />
+
+    <h3>Riwayat Transaksi</h3>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button id="showHistory">Tampilkan Riwayat</button>
+      <button id="exportTx">Export Riwayat</button>
+      <button id="clearHistory" style="background:#e85d5d">Hapus Riwayat</button>
+    </div>
+    <div id="historyList" style="max-height:220px;overflow:auto"></div>
+  </section>
+</main>
+
+<!-- Hidden forms / modals (simple) -->
+<div id="modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);align-items:center;justify-content:center">
+  <div style="background:white;padding:12px;border-radius:8px;width:320px">
+    <h4 id="modalTitle">Tambah Produk</h4>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+      <input id="p_barcode" placeholder="Barcode (scan atau ketik)" />
+      <input id="p_name" placeholder="Nama produk" />
+      <input id="p_price" placeholder="Harga (angka saja)" />
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
+        <button id="saveProduct">Simpan</button>
+        <button id="cancelProduct" style="background:#888">Batal</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Aplikasi offline sederhana. File ini bisa disimpan dan dibuka langsung di browser (Chrome Android direkomendasikan).
+</footer>
+
+  </div><script>
+// Simple POS with camera barcode scanning
+// Uses BarcodeDetector if available, otherwise uses @zxing/library (if loaded) as fallback.
+
+let products = {}; // barcode -> {name, price}
+let cart = [];
+let txHistory = [];
+const storageKey = 'pos_products_v1';
+const historyKey = 'pos_history_v1';
+
+// UI refs
+const video = document.getElementById('video');
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const detectedEl = document.getElementById('detected');
+const productList = document.getElementById('productList');
+const btnAddProduct = document.getElementById('btnAddProduct');
+const modal = document.getElementById('modal');
+const p_barcode = document.getElementById('p_barcode');
+const p_name = document.getElementById('p_name');
+const p_price = document.getElementById('p_price');
+const saveProduct = document.getElementById('saveProduct');
+const cancelProduct = document.getElementById('cancelProduct');
+const cartTableBody = document.querySelector('#cartTable tbody');
+const totalEl = document.getElementById('total');
+const itemCountEl = document.getElementById('itemCount');
+const checkoutBtn = document.getElementById('checkout');
+const clearCartBtn = document.getElementById('clearCart');
+const saveTxBtn = document.getElementById('saveTx');
+const showHistoryBtn = document.getElementById('showHistory');
+const historyList = document.getElementById('historyList');
+const storageStatus = document.getElementById('storageStatus');
+const exportProductsBtn = document.getElementById('exportProducts');
+const importProductsBtn = document.getElementById('importProducts');
+const exportTxBtn = document.getElementById('exportTx');
+const clearHistoryBtn = document.getElementById('clearHistory');
+
+// Barcode scanning state
+let stream = null;
+let scanning = false;
+let barcodeDetector = null;
+let zxingReader = null;
+let scanInterval = null;
+
+function loadStorage(){
+  const raw = localStorage.getItem(storageKey);
+  if(raw){
+    try{ products = JSON.parse(raw);}catch(e){products={};}
+  }
+  const rawH = localStorage.getItem(historyKey);
+  if(rawH){
+    try{ txHistory = JSON.parse(rawH);}catch(e){txHistory=[]}
+  }
+  updateStorageStatus();
+}
+
+function saveProductsToStorage(){
+  localStorage.setItem(storageKey, JSON.stringify(products));
+  updateStorageStatus();
+}
+function saveHistoryToStorage(){
+  localStorage.setItem(historyKey, JSON.stringify(txHistory));
+  updateStorageStatus();
+}
+function updateStorageStatus(){
+  const pCount = Object.keys(products).length;
+  const hCount = txHistory.length;
+  storageStatus.textContent = `${pCount} produk • ${hCount} tx`;
+}
+
+function renderProducts(){
+  productList.innerHTML = '';
+  const keys = Object.keys(products);
+  if(keys.length===0){ productList.innerHTML = '<div class="small">Belum ada produk. Klik "Tambah Produk" untuk mendaftar.</div>'; return }
+  const table = document.createElement('table');
+  table.innerHTML = '<thead><tr><th>Barcode</th><th>Nama</th><th>Harga</th><th></th></tr></thead>';
+  const tb = document.createElement('tbody');
+  keys.forEach(bc=>{
+    const p = products[bc];
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="small">${bc}</td><td>${p.name}</td><td>Rp ${number(p.price)}</td><td><button data-bc="${bc}" class="delProd" style="background:#e85d5d">Hapus</button></td>`;
+    tb.appendChild(tr);
+  });
+  table.appendChild(tb);
+  productList.appendChild(table);
+  // attach delete handlers
+  productList.querySelectorAll('.delProd').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const bc = btn.dataset.bc;
+      if(confirm('Hapus produk '+products[bc].name+' ?')){ delete products[bc]; saveProductsToStorage(); renderProducts(); }
+    })
+  })
+}
+
+function number(v){ return new Intl.NumberFormat('id-ID').format(Number(v)||0) }
+
+// Cart functions
+function addToCart(barcode, qty=1){
+  if(!products[barcode]){
+    // not found: show quick modal to add
+    p_barcode.value = barcode;
+    p_name.value = '';
+    p_price.value = '';
+    showModal('Produk baru terdeteksi — lengkapi data');
+    return;
+  }
+  const prod = products[barcode];
+  const existing = cart.find(c=>c.barcode===barcode);
+  if(existing){ existing.qty += qty; }
+  else{ cart.push({barcode, name:prod.name, price:prod.price, qty}); }
+  renderCart();
+}
+
+function renderCart(){
+  cartTableBody.innerHTML = '';
+  let total = 0; let count = 0;
+  cart.forEach((c,i)=>{
+    const subtotal = c.price * c.qty; total += subtotal; count += c.qty;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${i+1}</td><td>${c.name}</td><td><input style="width:60px" type="number" min="1" value="${c.qty}" data-i="${i}" class="qtyInput"></td><td>Rp ${number(c.price)}</td><td>Rp ${number(subtotal)}</td><td><button data-i="${i}" class="removeBtn" style="background:#e85d5d">x</button></td>`;
+    cartTableBody.appendChild(tr);
+  });
+  // qty change handlers
+  cartTableBody.querySelectorAll('.qtyInput').forEach(inp=>{
+    inp.addEventListener('change',()=>{
+      const i = Number(inp.dataset.i); const v = Number(inp.value)||1; cart[i].qty = v; renderCart();
+    })
+  });
+  cartTableBody.querySelectorAll('.removeBtn').forEach(btn=>{ btn.addEventListener('click',()=>{ const i=Number(btn.dataset.i); cart.splice(i,1); renderCart(); }) });
+  totalEl.textContent = number(total);
+  itemCountEl.textContent = count;
+}
+
+// Modal
+function showModal(title){ document.getElementById('modalTitle').textContent = title; modal.style.display='flex'; }
+function hideModal(){ modal.style.display='none'; }
+
+btnAddProduct.addEventListener('click',()=>{ p_barcode.value=''; p_name.value=''; p_price.value=''; showModal('Tambah Produk Baru'); });
+saveProduct.addEventListener('click',()=>{
+  const bc = p_barcode.value.trim(); const name = p_name.value.trim(); const price = Number(p_price.value)||0;
+  if(!bc || !name || price<=0){ alert('Isi semua data produk dengan benar.'); return }
+  products[bc] = {name, price}; saveProductsToStorage(); renderProducts(); hideModal();
+  // if modal opened because of scanning missing product -> directly add to cart
+  addToCart(bc, 1);
+});
+cancelProduct.addEventListener('click',()=>{ hideModal(); });
+
+// History functions
+function saveTransaction(){ if(cart.length===0){ alert('Keranjang kosong.'); return }
+  const tx = {id:Date.now(), date:new Date().toISOString(), items: JSON.parse(JSON.stringify(cart)), total: cart.reduce((s,c)=>s+c.price*c.qty,0)};
+  txHistory.unshift(tx); saveHistoryToStorage(); cart = []; renderCart(); renderHistory(); alert('Transaksi tersimpan.'); }
+
+function renderHistory(){ historyList.innerHTML = '';
+  if(txHistory.length===0){ historyList.innerHTML = '<div class="small">Belum ada riwayat transaksi.</div>'; return }
+  const div = document.createElement('div');
+  txHistory.slice(0,50).forEach(tx=>{
+    const el = document.createElement('div');
+    el.style.borderBottom='1px solid #eee'; el.style.padding='6px 0';
+    el.innerHTML = `<div style="display:flex;justify-content:space-between"><div><strong>${new Date(tx.date).toLocaleString()}</strong><div class="small">${tx.items.length} item</div></div><div style="font-weight:700">Rp ${number(tx.total)}</div></div>`;
+    div.appendChild(el);
+  });
+  historyList.appendChild(div);
+}
+
+// Camera + scanning
+async function startCamera(){
+  if(scanning) return;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    video.srcObject = stream;
+    await video.play();
+    scanning = true;
+    detectedEl.textContent = '-';
+    // init detectors
+    if('BarcodeDetector' in window){
+      try{ const supported = await BarcodeDetector.getSupportedFormats(); barcodeDetector = new BarcodeDetector({formats: supported}); }
+      catch(e){ barcodeDetector = null }
+    }
+    // try zxing if barcodeDetector not available
+    if(!barcodeDetector && typeof ZXing !== 'undefined'){
+      try{ zxingReader = new ZXing.BrowserMultiFormatReader(); }
+      catch(e){ zxingReader = null }
+    }
+    scanLoop();
+  }catch(e){ alert('Gagal akses kamera: '+e.message); }
+}
+
+async function scanLoop(){
+  const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
+  scanInterval = setInterval(async ()=>{
+    if(video.readyState < 2) return;
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+    if(barcodeDetector){
+      try{
+        const img = ctx.getImageData(0,0,canvas.width,canvas.height);
+        const barcodes = await barcodeDetector.detect(img);
+        if(barcodes && barcodes.length>0){
+          const code = barcodes[0].rawValue;
+          detected(code);
+        }
+      }catch(e){ /* ignore */ }
+    } else if(zxingReader){
+      try{
+        const result = await zxingReader.decodeFromVideoElement(video);
+        if(result && result.text) detected(result.text);
+      }catch(e){ /* zxing often throws while searching - ignore */ }
+    } else {
+      // Fallback: quick jsQR style detection (not included). We'll attempt to use decode via canvas.toDataURL and let user type if fail.
+    }
+  }, 500);
+}
+
+function detected(code){
+  if(!code) return;
+  detectedEl.textContent = code;
+  // to avoid double-add, check last scanned
+  if(window._lastScanned === code) return; window._lastScanned = code;
+  addToCart(code, 1);
+  // reset last scanned after 1.2s so user can scan same barcode again intentionally
+  setTimeout(()=>{ window._lastScanned = null }, 1200);
+}
+
+function stopCamera(){
+  scanning = false; detectedEl.textContent = '-';
+  if(scanInterval) clearInterval(scanInterval);
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
+  if(video) video.srcObject = null;
+}
+
+startBtn.addEventListener('click', ()=> startCamera());
+stopBtn.addEventListener('click', ()=> stopCamera());
+
+// Other UI handlers
+checkoutBtn.addEventListener('click', ()=>{
+  if(cart.length===0){ alert('Keranjang kosong'); return }
+  const total = cart.reduce((s,c)=>s+c.price*c.qty,0);
+  if(confirm('Total Rp '+number(total)+'. Lanjutkan bayar dan kosongkan keranjang?')){ cart=[]; renderCart(); }
+});
+clearCartBtn.addEventListener('click', ()=>{ if(confirm('Kosongkan keranjang?')){ cart=[]; renderCart(); } });
+saveTxBtn.addEventListener('click', saveTransaction);
+showHistoryBtn.addEventListener('click', renderHistory);
+exportProductsBtn.addEventListener('click', ()=>{ const data = JSON.stringify(products); const blob = new Blob([data],{type:'application/json'}); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='products.json'; a.click(); URL.revokeObjectURL(url); });
+importProductsBtn.addEventListener('click', ()=>{
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='.json,application/json'; inp.onchange = e =>{
+    const f = e.target.files[0]; if(!f) return; const reader = new FileReader(); reader.onload = ev =>{ try{ const obj = JSON.parse(ev.target.result); products = Object.assign({}, products, obj); saveProductsToStorage(); renderProducts(); alert('Import selesai.'); }catch(err){ alert('File tidak valid'); } };
+    reader.readAsText(f);
+  }; inp.click();
+});
+exportTxBtn.addEventListener('click', ()=>{ const data = JSON.stringify(txHistory); const blob = new Blob([data],{type:'application/json'}); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='transactions.json'; a.click(); URL.revokeObjectURL(url); });
+clearHistoryBtn.addEventListener('click', ()=>{ if(confirm('Hapus semua riwayat transaksi?')){ txHistory=[]; saveHistoryToStorage(); renderHistory(); } });
+
+// Init load
+loadStorage(); renderProducts(); renderCart(); renderHistory();
+
+// Try to dynamically load ZXing if BarcodeDetector not available (best-effort)
+if(!('BarcodeDetector' in window)){
+  // load ZXing from unpkg (best-effort, may fail offline). We don't require it — user can still add products manually.
+  const script = document.createElement('script');
+  script.src = 'https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js';
+  script.onload = ()=>{ console.log('ZXing loaded'); };
+  script.onerror = ()=>{ console.log('ZXing failed to load, continue without it'); };
+  document.head.appendChild(script);
+}
+
+</script></body>
+</html>
