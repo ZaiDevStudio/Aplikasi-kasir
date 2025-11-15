@@ -1,0 +1,2 @@
+# Aplikasi-kasir
+Sistem kasir
