@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Aplikasi Kasir - Scan Barcode (Offline)</title>
+  <title>Aplikasi Kasir - Scan Barcode (Offline) dengan Stok</title>
   <style>
     :root{--accent:#0b78d1}
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;margin:0;padding:0;background:#f6f7fb;color:#111}
@@ -31,7 +31,7 @@
     <header>
       <div>
         <h1>Aplikasi Kasir - Scan Barcode (HTML Offline)</h1>
-        <div class="small">Gunakan kamera HP untuk scan. Bisa daftarkan barang baru dan total otomatis.</div>
+        <div class="small">Gunakan kamera HP untuk scan. Bisa daftarkan barang baru dan total otomatis. **Dilengkapi Stok!**</div>
       </div>
       <div style="margin-left:auto;text-align:right">
         <div class="small">Penyimpanan: <span id="storageStatus" class="badge">--</span></div>
@@ -91,7 +91,6 @@
   </section>
 </main>
 
-<!-- Hidden forms / modals (simple) -->
 <div id="modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);align-items:center;justify-content:center">
   <div style="background:white;padding:12px;border-radius:8px;width:320px">
     <h4 id="modalTitle">Tambah Produk</h4>
@@ -99,7 +98,7 @@
       <input id="p_barcode" placeholder="Barcode (scan atau ketik)" />
       <input id="p_name" placeholder="Nama produk" />
       <input id="p_price" placeholder="Harga (angka saja)" />
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
+      <input id="p_stock" placeholder="Stok Awal (angka saja)" /> <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
         <button id="saveProduct">Simpan</button>
         <button id="cancelProduct" style="background:#888">Batal</button>
       </div>
@@ -108,18 +107,19 @@
 </div>
 
 <footer>
-  Aplikasi offline sederhana. File ini bisa disimpan dan dibuka langsung di browser (Chrome Android direkomendasikan).
+  Aplikasi offline sederhana dengan fitur stok barang. File ini bisa disimpan dan dibuka langsung di browser (Chrome Android direkomendasikan).
 </footer>
 
   </div><script>
 // Simple POS with camera barcode scanning
 // Uses BarcodeDetector if available, otherwise uses @zxing/library (if loaded) as fallback.
 
-let products = {}; // barcode -> {name, price}
+let products = {}; // barcode -> {name, price, stock}
 let cart = [];
 let txHistory = [];
-const storageKey = 'pos_products_v1';
+const storageKey = 'pos_products_v2'; // Diubah untuk menghindari konflik dengan data lama
 const historyKey = 'pos_history_v1';
+const stockThreshold = 5; // Batas untuk penanda stok rendah
 
 // UI refs
 const video = document.getElementById('video');
@@ -132,6 +132,7 @@ const modal = document.getElementById('modal');
 const p_barcode = document.getElementById('p_barcode');
 const p_name = document.getElementById('p_name');
 const p_price = document.getElementById('p_price');
+const p_stock = document.getElementById('p_stock'); // BARU
 const saveProduct = document.getElementById('saveProduct');
 const cancelProduct = document.getElementById('cancelProduct');
 const cartTableBody = document.querySelector('#cartTable tbody');
@@ -186,16 +187,34 @@ function renderProducts(){
   const keys = Object.keys(products);
   if(keys.length===0){ productList.innerHTML = '<div class="small">Belum ada produk. Klik "Tambah Produk" untuk mendaftar.</div>'; return }
   const table = document.createElement('table');
-  table.innerHTML = '<thead><tr><th>Barcode</th><th>Nama</th><th>Harga</th><th></th></tr></thead>';
+  // MODIFIKASI: Tambah kolom Stok
+  table.innerHTML = '<thead><tr><th>Barcode</th><th>Nama</th><th>Harga</th><th>Stok</th><th></th></tr></thead>';
   const tb = document.createElement('tbody');
   keys.forEach(bc=>{
     const p = products[bc];
+    const stockClass = (p.stock < stockThreshold) ? 'style="color:#e85d5d;font-weight:700"' : '';
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td class="small">${bc}</td><td>${p.name}</td><td>Rp ${number(p.price)}</td><td><button data-bc="${bc}" class="delProd" style="background:#e85d5d">Hapus</button></td>`;
+    // MODIFIKASI: Tambah data Stok dan tombol Edit
+    tr.innerHTML = `<td class="small">${bc}</td><td>${p.name}</td><td>Rp ${number(p.price)}</td><td ${stockClass}>${number(p.stock)}</td><td><button data-bc="${bc}" class="editProd" style="background:var(--accent);margin-right:4px">Edit</button><button data-bc="${bc}" class="delProd" style="background:#e85d5d">Hapus</button></td>`;
     tb.appendChild(tr);
   });
   table.appendChild(tb);
   productList.appendChild(table);
+
+  // BARU: Tambah handler tombol EDIT
+  productList.querySelectorAll('.editProd').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const bc = btn.dataset.bc;
+      const p = products[bc];
+      p_barcode.value = bc;
+      p_name.value = p.name;
+      p_price.value = p.price;
+      p_stock.value = p.stock; // MUAT STOK
+      showModal('Edit Produk: '+p.name);
+      modal.dataset.mode = 'edit';
+    })
+  });
+
   // attach delete handlers
   productList.querySelectorAll('.delProd').forEach(btn=>{
     btn.addEventListener('click',()=>{
@@ -210,17 +229,41 @@ function number(v){ return new Intl.NumberFormat('id-ID').format(Number(v)||0) }
 // Cart functions
 function addToCart(barcode, qty=1){
   if(!products[barcode]){
-    // not found: show quick modal to add
+    // Produk tidak ditemukan: Tampilkan modal untuk menambah produk baru
     p_barcode.value = barcode;
     p_name.value = '';
     p_price.value = '';
+    p_stock.value = '0'; // BARU: Inisialisasi stok
     showModal('Produk baru terdeteksi — lengkapi data');
+    modal.dataset.mode = 'scan_new'; // BARU: Set mode scan_new
     return;
   }
+
   const prod = products[barcode];
+
+  // BARU: Pengecekan Stok Awal
+  if(prod.stock <= 0) {
+      alert('Stok produk "'+prod.name+'" telah habis.');
+      return;
+  }
+
   const existing = cart.find(c=>c.barcode===barcode);
-  if(existing){ existing.qty += qty; }
-  else{ cart.push({barcode, name:prod.name, price:prod.price, qty}); }
+  if(existing){
+      // BARU: Pengecekan Stok saat menambah kuantitas
+      if(existing.qty + qty > prod.stock) {
+          alert('Gagal menambah. Jumlah di keranjang ('+existing.qty+') + jumlah baru ('+qty+') melebihi stok ('+prod.stock+').');
+          return;
+      }
+      existing.qty += qty;
+  }
+  else{
+      // BARU: Pengecekan Stok untuk penambahan item pertama
+      if(qty > prod.stock) {
+           alert('Gagal menambah. Jumlah yang diminta ('+qty+') melebihi stok ('+prod.stock+').');
+           return;
+      }
+      cart.push({barcode, name:prod.name, price:prod.price, qty});
+  }
   renderCart();
 }
 
@@ -228,15 +271,29 @@ function renderCart(){
   cartTableBody.innerHTML = '';
   let total = 0; let count = 0;
   cart.forEach((c,i)=>{
+    // BARU: Ambil stok produk untuk batas max input
+    const prodStock = products[c.barcode] ? products[c.barcode].stock : 99999;
     const subtotal = c.price * c.qty; total += subtotal; count += c.qty;
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${i+1}</td><td>${c.name}</td><td><input style="width:60px" type="number" min="1" value="${c.qty}" data-i="${i}" class="qtyInput"></td><td>Rp ${number(c.price)}</td><td>Rp ${number(subtotal)}</td><td><button data-i="${i}" class="removeBtn" style="background:#e85d5d">x</button></td>`;
+    // MODIFIKASI: Tambah max="${prodStock}" pada input qty
+    tr.innerHTML = `<td>${i+1}</td><td>${c.name}</td><td><input style="width:60px" type="number" min="1" max="${prodStock}" value="${c.qty}" data-i="${i}" class="qtyInput"></td><td>Rp ${number(c.price)}</td><td>Rp ${number(subtotal)}</td><td><button data-i="${i}" class="removeBtn" style="background:#e85d5d">x</button></td>`;
     cartTableBody.appendChild(tr);
   });
   // qty change handlers
   cartTableBody.querySelectorAll('.qtyInput').forEach(inp=>{
     inp.addEventListener('change',()=>{
-      const i = Number(inp.dataset.i); const v = Number(inp.value)||1; cart[i].qty = v; renderCart();
+      const i = Number(inp.dataset.i);
+      let v = Number(inp.value)||1;
+      const prodStock = products[cart[i].barcode].stock;
+
+      // BARU: Pengecekan Stok saat kuantitas diubah manual
+      if (v > prodStock) {
+          alert('Jumlah melebihi stok yang tersedia ('+prodStock+').');
+          v = prodStock; // Set kuantitas ke maksimal stok
+          inp.value = v;
+      }
+      cart[i].qty = v;
+      renderCart();
     })
   });
   cartTableBody.querySelectorAll('.removeBtn').forEach(btn=>{ btn.addEventListener('click',()=>{ const i=Number(btn.dataset.i); cart.splice(i,1); renderCart(); }) });
@@ -248,20 +305,63 @@ function renderCart(){
 function showModal(title){ document.getElementById('modalTitle').textContent = title; modal.style.display='flex'; }
 function hideModal(){ modal.style.display='none'; }
 
-btnAddProduct.addEventListener('click',()=>{ p_barcode.value=''; p_name.value=''; p_price.value=''; showModal('Tambah Produk Baru'); });
+btnAddProduct.addEventListener('click',()=>{
+  p_barcode.value='';
+  p_name.value='';
+  p_price.value='';
+  p_stock.value='0'; // BARU: Inisialisasi stok
+  showModal('Tambah Produk Baru');
+  modal.dataset.mode = 'manual'; // BARU: Set mode manual
+});
+
 saveProduct.addEventListener('click',()=>{
-  const bc = p_barcode.value.trim(); const name = p_name.value.trim(); const price = Number(p_price.value)||0;
-  if(!bc || !name || price<=0){ alert('Isi semua data produk dengan benar.'); return }
-  products[bc] = {name, price}; saveProductsToStorage(); renderProducts(); hideModal();
-  // if modal opened because of scanning missing product -> directly add to cart
-  addToCart(bc, 1);
+  const bc = p_barcode.value.trim();
+  const name = p_name.value.trim();
+  const price = Number(p_price.value)||0;
+  const stock = Number(p_stock.value)||0; // BARU: Ambil stok
+
+  if(!bc || !name || price<=0 || stock<0){ alert('Isi semua data produk dengan benar (Barcode, Nama, Harga, dan Stok).'); return }
+
+  products[bc] = {name, price, stock}; // MODIFIKASI: Simpan stok
+
+  saveProductsToStorage();
+  renderProducts();
+  hideModal();
+
+  // Jika modal dibuka karena scan produk baru, langsung masukkan ke keranjang.
+  if (modal.dataset.mode === 'scan_new') {
+      addToCart(bc, 1);
+  }
 });
 cancelProduct.addEventListener('click',()=>{ hideModal(); });
 
 // History functions
-function saveTransaction(){ if(cart.length===0){ alert('Keranjang kosong.'); return }
+function saveTransaction(){
+  if(cart.length===0){ alert('Keranjang kosong.'); return }
+
+  // BARU: Lakukan pengurangan stok
+  cart.forEach(c => {
+      const prod = products[c.barcode];
+      if (prod) {
+          // Pastikan stok tidak menjadi negatif
+          prod.stock = Math.max(0, prod.stock - c.qty);
+      }
+  });
+
+  // BARU: Simpan perubahan level stok ke localStorage
+  saveProductsToStorage();
+
+  // Logika simpan transaksi lama
   const tx = {id:Date.now(), date:new Date().toISOString(), items: JSON.parse(JSON.stringify(cart)), total: cart.reduce((s,c)=>s+c.price*c.qty,0)};
-  txHistory.unshift(tx); saveHistoryToStorage(); cart = []; renderCart(); renderHistory(); alert('Transaksi tersimpan.'); }
+  txHistory.unshift(tx);
+  saveHistoryToStorage();
+
+  cart = [];
+  renderCart();
+  renderProducts(); // BARU: Render ulang daftar produk untuk menunjukkan stok baru
+  renderHistory();
+  alert('Transaksi tersimpan dan stok produk telah dikurangi.');
+}
 
 function renderHistory(){ historyList.innerHTML = '';
   if(txHistory.length===0){ historyList.innerHTML = '<div class="small">Belum ada riwayat transaksi.</div>'; return }
@@ -348,33 +448,26 @@ stopBtn.addEventListener('click', ()=> stopCamera());
 checkoutBtn.addEventListener('click', ()=>{
   if(cart.length===0){ alert('Keranjang kosong'); return }
   const total = cart.reduce((s,c)=>s+c.price*c.qty,0);
-  if(confirm('Total Rp '+number(total)+'. Lanjutkan bayar dan kosongkan keranjang?')){ cart=[]; renderCart(); }
+  if(confirm('Total Rp '+number(total)+'. Lanjutkan bayar dan kosongkan keranjang?')){
+    // Ketika checkout, kita anggap transaksi selesai dan stok harus dikurangi
+    saveTransaction();
+  }
 });
 clearCartBtn.addEventListener('click', ()=>{ if(confirm('Kosongkan keranjang?')){ cart=[]; renderCart(); } });
 saveTxBtn.addEventListener('click', saveTransaction);
 showHistoryBtn.addEventListener('click', renderHistory);
-exportProductsBtn.addEventListener('click', ()=>{ const data = JSON.stringify(products); const blob = new Blob([data],{type:'application/json'}); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='products.json'; a.click(); URL.revokeObjectURL(url); });
+exportProductsBtn.addEventListener('click', ()=>{ const data = JSON.stringify(products); const blob = new Blob([data],{type:'application/json'}); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='products_with_stock.json'; a.click(); URL.revokeObjectURL(url); });
 importProductsBtn.addEventListener('click', ()=>{
   const inp = document.createElement('input'); inp.type='file'; inp.accept='.json,application/json'; inp.onchange = e =>{
-    const f = e.target.files[0]; if(!f) return; const reader = new FileReader(); reader.onload = ev =>{ try{ const obj = JSON.parse(ev.target.result); products = Object.assign({}, products, obj); saveProductsToStorage(); renderProducts(); alert('Import selesai.'); }catch(err){ alert('File tidak valid'); } };
+    const f = e.target.files[0]; if(!f) return; const reader = new FileReader(); reader.onload = ev =>{ try{ const obj = JSON.parse(ev.target.result);
+      // Untuk impor, kita pastikan setiap produk punya field stock
+      Object.keys(obj).forEach(key => {
+          if (obj[key].stock === undefined) {
+              obj[key].stock = 0; // Set default stock jika tidak ada
+          }
+      });
+      products = Object.assign({}, products, obj); saveProductsToStorage(); renderProducts(); alert('Import selesai.'); }catch(err){ alert('File tidak valid'); } };
     reader.readAsText(f);
   }; inp.click();
 });
-exportTxBtn.addEventListener('click', ()=>{ const data = JSON.stringify(txHistory); const blob = new Blob([data],{type:'application/json'}); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='transactions.json'; a.click(); URL.revokeObjectURL(url); });
-clearHistoryBtn.addEventListener('click', ()=>{ if(confirm('Hapus semua riwayat transaksi?')){ txHistory=[]; saveHistoryToStorage(); renderHistory(); } });
-
-// Init load
-loadStorage(); renderProducts(); renderCart(); renderHistory();
-
-// Try to dynamically load ZXing if BarcodeDetector not available (best-effort)
-if(!('BarcodeDetector' in window)){
-  // load ZXing from unpkg (best-effort, may fail offline). We don't require it — user can still add products manually.
-  const script = document.createElement('script');
-  script.src = 'https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js';
-  script.onload = ()=>{ console.log('ZXing loaded'); };
-  script.onerror = ()=>{ console.log('ZXing failed to load, continue without it'); };
-  document.head.appendChild(script);
-}
-
-</script></body>
-</html>
+exportTxBtn.addEventListener('click', ()=>{ const data = JSON.stringify(txHistory); const b
